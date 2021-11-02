@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js webgl - instancing - performance</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <style>
+      .dg .folder .gui-stats {
+        height: auto;
+      }
+      body,
+      canvas {
+        margin: 0;
+        padding: 0;
+      }
+      .text-soon {
+        position: fixed;
+        font-size: 1.5em;
+        font-family: Arial, Helvetica, sans-serif;
+        color: white;
+        padding: 50px;
+        bottom: 0px;
+        right: 0px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="container"></div>
+    <span class="text-soon">COMING SOON</span>
+
+    <script type="module">
+      import * as THREE from "./three/build/three.module.js";
+      import { OrbitControls } from "./three/jsm/controls/OrbitControls.js";
+      //import { PointerLockControls } from "./three/jsm/controls/PointerLock.js";
+      import { OBJLoader } from "./three/jsm/loaders/OBJLoader.js";
+
+      let container, stats, gui, guiStatsEl;
+      let camera,
+        controls,
+        scene,
+        renderer,
+        material,
+        text,
+        rotateCam = false;
+      let loader = new OBJLoader();
+      let i = 0;
+
+      init();
+      initTextMesh();
+      initMesh();
+      animate();
+
+      function clean() {
+        const meshes = [];
+
+        scene.traverse(function (object) {
+          if (object.isMesh) meshes.push(object);
+        });
+
+        for (let i = 0; i < meshes.length; i++) {
+          const mesh = meshes[i];
+          mesh.material.dispose();
+          mesh.geometry.dispose();
+          scene.remove(mesh);
+        }
+      }
+
+      const randomizeMatrix = (function () {
+        const position = new THREE.Vector3();
+        const rotation = new THREE.Euler();
+        const quaternion = new THREE.Quaternion();
+        const scale = new THREE.Vector3();
+
+        return function (matrix) {
+          position.x = Math.random() * 40 - 20;
+          position.y = Math.random() * 40 - 20;
+          position.z = Math.random() * 40 - 20;
+
+          rotation.x = Math.random() * 2 * Math.PI;
+          rotation.y = Math.random() * 2 * Math.PI;
+          rotation.z = Math.random() * 2 * Math.PI;
+
+          quaternion.setFromEuler(rotation);
+
+          scale.x = scale.y = scale.z = Math.random() * 1000;
+
+          matrix.compose(position, quaternion, scale);
+        };
+      })();
+
+      function initTextMesh() {
+        loader.load("./assets/text.obj", (obj) => {
+          obj.scale.set(100, 100, 10);
+          obj.children[0].material = new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+          });
+          text = obj;
+          text.name = "text";
+          scene.add(text);
+        });
+      }
+
+      function initMesh() {
+        clean();
+
+        // make instances
+        loader.load("./assets/rabbits.obj", function (obj) {
+          material = new THREE.MeshNormalMaterial();
+          obj.children[0].geometry.computeVertexNormals();
+          let geo = obj.children[0].geometry;
+          makeInstanced(geo);
+        });
+      }
+
+      function makeInstanced(geometry) {
+        const matrix = new THREE.Matrix4();
+        const mesh = new THREE.InstancedMesh(geometry, material, 300);
+
+        for (let i = 0; i < 300; i++) {
+          randomizeMatrix(matrix);
+          mesh.setMatrixAt(i, matrix);
+        }
+
+        scene.add(mesh);
+
+        //
+
+        const geometryByteLength = getGeometryByteLength(geometry);
+      }
+
+      function init() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        // camera
+
+        camera = new THREE.PerspectiveCamera(70, width / height, 1, 100);
+        camera.position.z = 30;
+
+        // renderer
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(width, height);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+
+        container = document.getElementById("container");
+        container.appendChild(renderer.domElement);
+
+        // scene
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+
+        // controls
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.autoRotate = true;
+        controls.maxDistance = 50;
+        controls.minDistance = 10;
+        window.addEventListener("resize", onWindowResize);
+      }
+
+      function rotateCamera(x) {
+        camera.position.x = Math.cos(x) * 30;
+        camera.position.z = Math.sin(x) * 30;
+      }
+
+      function onWindowResize() {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(width, height);
+      }
+
+      var time = performance.now();
+
+      function animate(delta) {
+        requestAnimationFrame(animate);
+        if (text) text.lookAt(camera.position);
+
+        if (performance.now() - time > 300) {
+          time = performance.now();
+          controls.changeState(false);
+        }
+        controls.update();
+        i += 0.005;
+        render();
+      }
+
+      function render() {
+        renderer.render(scene, camera);
+      }
+
+      function getGeometryByteLength(geometry) {
+        let total = 0;
+
+        if (geometry.index) total += geometry.index.array.byteLength;
+
+        for (const name in geometry.attributes) {
+          total += geometry.attributes[name].array.byteLength;
+        }
+
+        return total;
+      }
+    </script>
+  </body>
+</html>
